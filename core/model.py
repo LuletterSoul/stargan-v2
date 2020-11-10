@@ -128,7 +128,8 @@ class HighPass(nn.Module):
                                     [-1, -1, -1]]).to(device) / w_hpf
 
     def forward(self, x):
-        filter = self.filter.unsqueeze(0).unsqueeze(1).repeat(x.size(1), 1, 1, 1)
+        filter = self.filter.unsqueeze(0).unsqueeze(
+            1).repeat(x.size(1), 1, 1, 1)
         return F.conv2d(x, filter, padding=1, groups=x.size(1))
 
 
@@ -218,6 +219,40 @@ class MappingNetwork(nn.Module):
         return s
 
 
+class SANet(nn.Module):
+    def __init__(self, content_in_dim, content_out_dim, style_in_dim):
+        super(SANet, self).__init__()
+        self.style_code = None
+        self.f = nn.Conv2d(content_in_dim, content_out_dim, (1, 1))
+        self.g = nn.Conv2d(style_in_dim, content_out_dim, (1, 1))
+        self.h = nn.Conv2d(style_in_dim, content_out_dim, (1, 1))
+        self.sm = nn.Softmax(dim=-1)
+        self.out_conv = nn.Conv2d(content_out_dim, content_out_dim, (1, 1))
+
+    def forward(self, content_code, style_code=None):
+        F = self.f(mean_variance_norm(content_code))
+        if style_code is not None:
+            self.style_code = style_code  # b * c * h * w
+        G = self.g(mean_variance_norm(self.style_code))  # b * c * h * w
+        H = self.h(self.style_code)  # b * c * h * w
+        b, c, h, w = F.size()
+        F = F.view(b, -1, w * h).permute(0, 2, 1)  # b *(h * w) * c
+        b, c, h, w = G.size()
+        G = G.view(b, -1, w * h)  # b * c * (h * w)
+        # b* (h * w) * (h * w) similarity between content code with style code
+        S = torch.bmm(F, G)
+        S = self.sm(S)  # b * (h * w) * (h * w) softmax across column dimension
+        b, c, h, w = H.size()
+        H = H.view(b, -1, w * h)  # b * c * (h * w)
+        # b * [c * (h * w)]  @ b * [(h * w) * (h * w)] = b * c * (h * w)
+        O = torch.bmm(H, S.permute(0, 2, 1))
+        b, c, h, w = content_code.size()
+        O = O.view(b, c, h, w)
+        O = self.out_conv(O)
+        O += content_code
+        return O
+
+
 class StyleEncoder(nn.Module):
     def __init__(self, img_size=256, style_dim=64, num_domains=2, max_conv_dim=512):
         super().__init__()
@@ -281,8 +316,10 @@ class Discriminator(nn.Module):
 
 def build_model(args):
     generator = Generator(args.img_size, args.style_dim, w_hpf=args.w_hpf)
-    mapping_network = MappingNetwork(args.latent_dim, args.style_dim, args.num_domains)
-    style_encoder = StyleEncoder(args.img_size, args.style_dim, args.num_domains)
+    mapping_network = MappingNetwork(
+        args.latent_dim, args.style_dim, args.num_domains)
+    style_encoder = StyleEncoder(
+        args.img_size, args.style_dim, args.num_domains)
     discriminator = Discriminator(args.img_size, args.num_domains)
     generator_ema = copy.deepcopy(generator)
     mapping_network_ema = copy.deepcopy(mapping_network)

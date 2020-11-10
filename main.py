@@ -11,6 +11,8 @@ Creative Commons, PO Box 1866, Mountain View, CA 94042, USA.
 import os
 import argparse
 
+from numpy.core.numeric import load
+
 from munch import Munch
 from torch.backends import cudnn
 import torch
@@ -57,6 +59,7 @@ def main(args):
                                             shuffle=True,
                                             num_workers=args.num_workers))
         solver.train(loaders)
+
     elif args.mode == 'sample':
         assert len(subdirs(args.src_dir)) == args.num_domains
         assert len(subdirs(args.ref_dir)) == args.num_domains
@@ -169,8 +172,10 @@ if __name__ == '__main__':
                         help='output directory when aligning faces')
 
     # face alignment
-    parser.add_argument('--wing_path', type=str, default='expr/checkpoints/wing.ckpt')
-    parser.add_argument('--lm_path', type=str, default='expr/checkpoints/celeba_lm_mean.npz')
+    parser.add_argument('--wing_path', type=str,
+                        default='expr/checkpoints/wing.ckpt')
+    parser.add_argument('--lm_path', type=str,
+                        default='expr/checkpoints/celeba_lm_mean.npz')
 
     # step size
     parser.add_argument('--print_every', type=int, default=10)
